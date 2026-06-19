@@ -35,6 +35,15 @@ excluded by the 5×5° land-tile mask and the per-cell ocean flag.
 road_km_{primary,secondary,tertiary,other}, place_count, urban, seabar,
 landcover_class` (+ `exposure` in the scored CSV).
 
+**Buildings:** `bld_count` = number of footprints, `bld_area_m2` = total
+footprint area (UTM). **Places:** `place_count` = all POIs; plus 23
+class-count columns `pl_<class>` — `pl_atm, pl_bakery, pl_bank, pl_bar,
+pl_bus_station, pl_cafe, pl_church, pl_cloth_store, pl_convenience_store,
+pl_department_store, pl_funeralhome, pl_gas_station, pl_hospital, pl_lodging,
+pl_mosque, pl_movie_theater, pl_parking, pl_temple, pl_restaurant,
+pl_shopping_mall, pl_super_market, pl_taxi_stand, pl_trainstation` — folded
+from Overture's 880+ category taxonomy (the rest stay in `place_count` only).
+
 Cell centre follows `lon = WEST + ix*0.05 + 0.05/2`, `lat = SOUTH + iy*0.05 + 0.05/2`;
 `urban` = ≥20 buildings; `seabar` = 1 for ocean cells. Layers: buildings,
 roads (Overture `segment`), places (POIs), land cover, water (ocean mask).

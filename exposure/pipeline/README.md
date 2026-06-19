@@ -41,15 +41,58 @@ The per-cell CSV is a **superset of the Fortran `urban_points.csv` schema**
 input that `sample-fortran-grid.f90` consumes, so the OD-matrix product remains
 reachable if ever needed. Python does all aggregation + scoring here.
 
+## Data flow: raw Overture parquet → final CSV
+
+```
+Overture Maps S3  ──(overturemaps CLI, bbox-filtered)──►  GeoParquet cache
+   per 5×5° tile,                                          $EXPOSURE_DATA/overture/{sno}/
+   heavy layers (building, segment) split into 1° sub-bboxes      {type}.parquet  or  {type}/{r}_{c}.parquet
+        │
+        ▼  aggregate_to_grid.py — stream pq.iter_batches(50k), reproject to UTM,
+        │   bin to 0.05° cells, sum/count per layer
+        ▼
+   per-tile CSV   $EXPOSURE_DATA/grid_csv/{sno}.csv      (raw parquet discarded here)
+        │
+        ├─ aggregate_places.py — re-download just `place`, fold Overture
+        │   categories → 23 classes, add pl_<class> counts to {sno}.csv
+        ▼
+        ▼  aggregate_to_grid.py --merge-only
+   merged grid    ../data/ea_exposure_grid_0p05.csv       (372k cells, all 38 tiles)
+        │
+        ▼  compute_exposure.py — weighted score, ocean→nodata
+   ../data/ea_exposure_grid_0p05_scored.csv   +   ../data/ea_exposure_0p05.tif (COG)
+        │
+        ▼  upload_to_hf.py
+   HuggingFace dataset  E4DRR/ea-exposure
+```
+
 ## Layers → per-cell columns
 
 | Overture `-t` | columns |
 |---------------|---------|
-| `building` | `bld_count`, `bld_area_m2` (UTM area), `urban` = bld_count ≥ 20 |
+| `building` | `bld_count` (number of footprints), `bld_area_m2` (total footprint area, UTM), `urban` = bld_count ≥ 20 |
 | `segment` | `road_km` + `road_km_{primary,secondary,tertiary,other}` (rail dropped) |
-| `place` | `place_count` |
+| `place` | `place_count` (all POIs) + `pl_<class>` counts for 23 classes (see below) |
 | `land_cover` + `land_use` | `landcover_class` (area-dominant subtype) |
 | `water` | `seabar` = 1 if cell centre in an Overture **ocean** polygon |
+
+### Full per-cell schema (`ea_exposure_grid_0p05.csv`)
+
+`ix, iy` (grid indices) · `lon, lat` (cell centre) · `tile_sno` ·
+**buildings:** `bld_count`, `bld_area_m2` ·
+**roads:** `road_km`, `road_km_primary`, `road_km_secondary`, `road_km_tertiary`, `road_km_other` ·
+**places:** `place_count` + `pl_atm, pl_bakery, pl_bank, pl_bar, pl_bus_station,
+pl_cafe, pl_church, pl_cloth_store, pl_convenience_store, pl_department_store,
+pl_funeralhome, pl_gas_station, pl_hospital, pl_lodging, pl_mosque,
+pl_movie_theater, pl_parking, pl_temple, pl_restaurant, pl_shopping_mall,
+pl_super_market, pl_taxi_stand, pl_trainstation` ·
+**flags:** `urban`, `seabar` · **land:** `landcover_class` ·
+**score (scored CSV only):** `exposure` (0–1, ocean = nodata).
+
+`place_count` is **all** POIs in the cell; the `pl_<class>` columns count only
+those folding into the 23 classes (Overture has 880+ categories — the rest, e.g.
+`professional_services`, `real_estate`, stay in `place_count` only). The Overture
+category → class mapping lives in `place_categories.py`.
 
 ## Run
 
@@ -61,9 +104,10 @@ uv venv --python 3.11 && uv pip install -e .   # one-time
 .venv/bin/python download_overture.py  --tile 36
 .venv/bin/python aggregate_to_grid.py  --tile 36
 
-# full region
-.venv/bin/python download_overture.py          # all 38 tiles
-.venv/bin/python aggregate_to_grid.py          # -> ../data/ea_exposure_grid_0p05.csv
+# full region (or just `run_pipeline.py` to do download→aggregate→discard per tile)
+.venv/bin/python run_pipeline.py               # all 38 tiles, then merge + score + COG
+.venv/bin/python aggregate_places.py           # add 23 pl_<class> place columns
+.venv/bin/python aggregate_to_grid.py --merge-only   # rebuild merged CSV with new cols
 .venv/bin/python compute_exposure.py           # -> ../data/ea_exposure_0p05.tif (COG)
 ```
 
