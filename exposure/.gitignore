@@ -7,6 +7,7 @@ pipeline/.venv/
 # the HuggingFace dataset E4DRR/ea-exposure (too large for git).
 data/ea_exposure_grid_*.csv
 data/ea_exposure_*.tif
+data/plots/
 
 # Conversation / session exports
 2026-*-*.txt

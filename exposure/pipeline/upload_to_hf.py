@@ -116,6 +116,7 @@ def main() -> None:
         (config.REPO_DATA, "outputs",
          ["ea_exposure_grid_*.csv", "ea_exposure_*_scored.csv", "ea_exposure_*.tif"]),
         (config.grid_csv_dir(root), "grid_csv", ["*.csv"]),
+        (config.REPO_DATA / "plots", "plots", ["*.png"]),
     ]
 
     print(f"[hf] repo={args.repo} ({HF_REPO_TYPE})")
