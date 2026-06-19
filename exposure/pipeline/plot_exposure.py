@@ -60,10 +60,25 @@ def field(df: pd.DataFrame, col: str, mask_zero: bool = False) -> np.ma.MaskedAr
     return np.ma.masked_array(arr, mask=m)
 
 
-def base_ax(fig, rect, title: str):
+def land_background(df: pd.DataFrame) -> np.ma.MaskedArray:
+    """Grey backdrop = every present land cell (ocean masked), so sparse-desert
+    cells render as land, not blank 'missing' area."""
+    nx = int(round((config.EAST - config.WEST) / RES))
+    ny = int(round((config.NORTH - config.SOUTH) / RES))
+    arr = np.full((ny, nx), np.nan)
+    arr[df["iy"].to_numpy(), df["ix"].to_numpy()] = 1.0
+    sea = np.zeros((ny, nx), dtype=bool)
+    sea[df["iy"].to_numpy(), df["ix"].to_numpy()] = df["seabar"].to_numpy() == 1
+    return np.ma.masked_array(arr, mask=np.isnan(arr) | sea)
+
+
+def base_ax(fig, rect, title: str, df=None):
     spec = rect if isinstance(rect, tuple) else (rect,)
     ax = fig.add_subplot(*spec, projection=PROJ)
     ax.set_extent(EXTENT, crs=PROJ)
+    if df is not None:
+        from matplotlib.colors import ListedColormap
+        mesh(ax, land_background(df), ListedColormap(["#e7e7e2"]))  # land = light grey
     bnd = gpd.read_file(BOUNDARY).to_crs("EPSG:4326")
     ax.add_feature(ShapelyFeature(bnd.geometry, PROJ, edgecolor="black",
                                   facecolor="none", linewidth=0.6), zorder=5)
@@ -85,13 +100,14 @@ def mesh(ax, arr, cmap, norm=None, vmin=None, vmax=None):
 def single(df, col, title, fname, cmap="viridis", log=False, mask_zero=False, label=""):
     arr = field(df, col, mask_zero=mask_zero)
     fig = plt.figure(figsize=(8, 9))
-    ax = base_ax(fig, 111, title)
+    ax = base_ax(fig, 111, title, df=df)            # land backdrop -> full extent visible
     norm = LogNorm(vmin=max(1, np.nanmin(arr.compressed()) if arr.count() else 1),
                    vmax=arr.max()) if log and arr.count() else None
     pcm = mesh(ax, arr, cmap, norm=norm)
     cb = fig.colorbar(pcm, ax=ax, shrink=0.6, pad=0.02)
     cb.set_label(label or col, fontsize=8)
-    fig.text(0.5, 0.06, "Boundary: ICPAC/GHACOF (ea_ghcf_simple.geojson) · grid 0.05° · Overture Maps",
+    fig.text(0.5, 0.04,
+             "Boundary: ICPAC/GHACOF (ea_ghcf_simple.geojson) · grey = land · grid 0.05° · Overture Maps",
              ha="center", fontsize=6, color="grey")
     OUT.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUT / fname, dpi=130, bbox_inches="tight")
@@ -104,16 +120,17 @@ def major_facilities(df):
               ("pl_lodging", "Lodging (shelter)", "Purples"),
               ("pl_super_market", "Supermarkets (supply)", "Greens"),
               ("pl_gas_station", "Gas stations (fuel/logistics)", "Oranges")]
-    fig = plt.figure(figsize=(13, 11))
+    fig = plt.figure(figsize=(12, 13), constrained_layout=True)
     for i, (col, title, cmap) in enumerate(panels, 1):
-        ax = base_ax(fig, (2, 2, i), title)
+        ax = base_ax(fig, (2, 2, i), title, df=df)
         arr = field(df, col, mask_zero=True)
-        pcm = mesh(ax, arr, cmap, vmin=1, vmax=max(2, np.nanpercentile(arr.compressed(), 98) if arr.count() else 2))
+        vmax = max(2, np.nanpercentile(arr.compressed(), 98)) if arr.count() else 2
+        pcm = mesh(ax, arr, cmap, vmin=1, vmax=vmax)
         fig.colorbar(pcm, ax=ax, shrink=0.7, pad=0.02).set_label("count / 0.05° cell", fontsize=7)
-    fig.suptitle("Major place classes — critical facilities per 0.05° cell (Overture)", fontsize=12)
-    fig.text(0.5, 0.04, "Boundary: ICPAC/GHACOF (ea_ghcf_simple.geojson)", ha="center", fontsize=7, color="grey")
+    fig.suptitle("Major place classes — critical facilities per 0.05° cell (Overture, grey = land)",
+                 fontsize=12)
     OUT.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT / "05_major_facilities.png", dpi=130, bbox_inches="tight")
+    fig.savefig(OUT / "05_major_facilities.png", dpi=130)   # constrained_layout handles spacing
     plt.close(fig)
     print("  05_major_facilities.png")
 
