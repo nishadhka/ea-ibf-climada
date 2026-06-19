@@ -99,18 +99,21 @@ def mesh(ax, arr, cmap, norm=None, vmin=None, vmax=None):
 
 def single(df, col, title, fname, cmap="viridis", log=False, mask_zero=False, label=""):
     arr = field(df, col, mask_zero=mask_zero)
-    fig = plt.figure(figsize=(8, 9))
+    # constrained_layout (NOT bbox_inches='tight') so the colorbar + gridline
+    # labels don't crop the map margins / cut the boundary.
+    fig = plt.figure(figsize=(8.5, 9.5), constrained_layout=True)
     ax = base_ax(fig, 111, title, df=df)            # land backdrop -> full extent visible
     norm = LogNorm(vmin=max(1, np.nanmin(arr.compressed()) if arr.count() else 1),
                    vmax=arr.max()) if log and arr.count() else None
     pcm = mesh(ax, arr, cmap, norm=norm)
+    ax.set_extent(EXTENT, crs=PROJ)                 # re-assert after meshes
     cb = fig.colorbar(pcm, ax=ax, shrink=0.6, pad=0.02)
     cb.set_label(label or col, fontsize=8)
-    fig.text(0.5, 0.04,
-             "Boundary: ICPAC/GHACOF (ea_ghcf_simple.geojson) · grey = land · grid 0.05° · Overture Maps",
-             ha="center", fontsize=6, color="grey")
+    ax.text(0.5, -0.08,
+            "Boundary: ICPAC/GHACOF (ea_ghcf_simple.geojson) · grey = land · grid 0.05° · Overture Maps",
+            transform=ax.transAxes, ha="center", fontsize=6, color="grey")
     OUT.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT / fname, dpi=130, bbox_inches="tight")
+    fig.savefig(OUT / fname, dpi=130)
     plt.close(fig)
     print(f"  {fname}")
 
@@ -126,6 +129,7 @@ def major_facilities(df):
         arr = field(df, col, mask_zero=True)
         vmax = max(2, np.nanpercentile(arr.compressed(), 98)) if arr.count() else 2
         pcm = mesh(ax, arr, cmap, vmin=1, vmax=vmax)
+        ax.set_extent(EXTENT, crs=PROJ)             # re-assert after meshes
         fig.colorbar(pcm, ax=ax, shrink=0.7, pad=0.02).set_label("count / 0.05° cell", fontsize=7)
     fig.suptitle("Major place classes — critical facilities per 0.05° cell (Overture, grey = land)",
                  fontsize=12)
