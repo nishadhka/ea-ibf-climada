@@ -1,0 +1,12 @@
+# Python environment / build artifacts
+pipeline/.venv/
+**/__pycache__/
+*.egg-info/
+
+# Generated exposure products — reproducible from the pipeline and published to
+# the HuggingFace dataset E4DRR/ea-exposure (too large for git).
+data/ea_exposure_grid_*.csv
+data/ea_exposure_*.tif
+
+# Conversation / session exports
+2026-*-*.txt

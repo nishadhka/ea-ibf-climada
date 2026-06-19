@@ -1,0 +1,46 @@
+---
+license: odc-by
+tags:
+  - exposure
+  - east-africa
+  - overture-maps
+  - impact-based-forecasting
+---
+
+# East Africa Exposure Grid (Overture Maps, 0.05°)
+
+Gridded exposure dataset for the East Africa IBF work, derived from
+[Overture Maps](https://overturemaps.org/) (OSM-derived) at **0.05°** over
+**S −15, N 25, W 20, E 53**. Built by the pipeline in
+[`icpac-igad/ea-ibf-climada`](https://github.com/icpac-igad/ea-ibf-climada)
+under `exposure/pipeline/`.
+
+**Complete East Africa region — all 38 land tiles.** 372,000 land cells
+(660×800 grid), 137,673 urban cells, 58,780 ocean (`seabar`) cells, and
+~188 million Overture building footprints aggregated. Ocean-facing area is
+excluded by the 5×5° land-tile mask and the per-cell ocean flag.
+
+## Contents
+
+| Path | What |
+|------|------|
+| `outputs/ea_exposure_grid_0p05.csv` | merged per-cell grid (raw layer aggregates) |
+| `outputs/ea_exposure_grid_0p05_scored.csv` | same + `exposure` composite score |
+| `outputs/ea_exposure_0p05.tif` | exposure score as a 0.05° EPSG:4326 COG (660×800; ocean = nodata) |
+| `grid_csv/{sno}.csv` | per-tile aggregates (one file per 5×5° tile) |
+
+## Per-cell schema
+
+`ix, iy, lon, lat, tile_sno, bld_count, bld_area_m2, road_km,
+road_km_{primary,secondary,tertiary,other}, place_count, urban, seabar,
+landcover_class` (+ `exposure` in the scored CSV).
+
+Cell centre follows `lon = WEST + ix*0.05 + 0.05/2`, `lat = SOUTH + iy*0.05 + 0.05/2`;
+`urban` = ≥20 buildings; `seabar` = 1 for ocean cells. Layers: buildings,
+roads (Overture `segment`), places (POIs), land cover, water (ocean mask).
+
+## Provenance
+
+Source: Overture Maps (buildings, transportation, places, base land/water).
+Exposure score = 0.50·norm(bld_area) + 0.20·norm(bld_count) + 0.20·norm(road_km)
++ 0.10·norm(place_count), p99-capped; ocean cells nodata.
