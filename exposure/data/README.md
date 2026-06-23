@@ -20,6 +20,26 @@ under `exposure/pipeline/`.
 ~188 million Overture building footprints aggregated. Ocean-facing area is
 excluded by the 5×5° land-tile mask and the per-cell ocean flag.
 
+## Reproduce
+
+Analyse directly (no download):
+
+```python
+import pandas as pd
+df = pd.read_csv("hf://datasets/E4DRR/ea-exposure/outputs/ea_exposure_grid_0p05_scored.csv")
+```
+
+Regenerate raw values from Overture (raw parquet is not stored here — re-fetched
+live from Overture S3, no key). Pipeline:
+[`icpac-igad/ea-ibf-climada`](https://github.com/icpac-igad/ea-ibf-climada) `exposure/pipeline/`:
+
+```bash
+python download_overture.py --tile 36        # raw download (buildings, roads, places, land, water)
+python aggregate_to_grid.py --tile 36 --no-concat
+python aggregate_places.py  --tile 36        # 23 pl_<class> counts
+# all 38 tiles: run_pipeline.py → aggregate_places.py → aggregate_to_grid.py --merge-only → compute_exposure.py
+```
+
 ## Contents
 
 | Path | What |

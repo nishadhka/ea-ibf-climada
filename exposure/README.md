@@ -85,6 +85,50 @@ python upload_to_hf.py                            # publish to HuggingFace
 
 Resolution is a flag everywhere (`--res 0.1`). Re-runs skip cached tiles.
 
+## Reproduce
+
+**Option A — just analyse the published data (no download/processing).**
+Load straight from HuggingFace; every column is a real per-cell statistic
+(counts, areas, lengths) except `exposure` which is derived:
+
+```python
+import pandas as pd
+# full merged grid + composite score (372k rows, 39 columns)
+df = pd.read_csv("hf://datasets/E4DRR/ea-exposure/outputs/ea_exposure_grid_0p05_scored.csv")
+# one 5×5° tile's raw aggregates
+t36 = pd.read_csv("hf://datasets/E4DRR/ea-exposure/grid_csv/36.csv")
+```
+
+**Option B — regenerate the raw values from Overture (no HF needed).**
+The raw GeoParquet is *not* stored on HF (it is discarded per tile); these
+scripts re-fetch it live from Overture S3 (no API key) and rebuild the exact
+per-cell columns:
+
+```bash
+cd pipeline
+uv venv --python 3.11 && uv pip install -e .          # one-time
+
+python download_overture.py --tile 36                 # raw download: building, segment,
+                                                      #   place, land_use, land_cover, water
+python aggregate_to_grid.py  --tile 36 --no-concat    # raw parquet -> per-cell stats (grid_csv/36.csv)
+python aggregate_places.py   --tile 36                # add the 23 pl_<class> counts
+# ...repeat per tile, or do all 38 at once:
+python run_pipeline.py --continue-on-error            # download→aggregate→discard, all 38 tiles
+python aggregate_places.py                            # 23 place classes, all tiles
+python aggregate_to_grid.py --merge-only              # -> data/ea_exposure_grid_0p05.csv
+python compute_exposure.py                            # -> scored CSV + COG
+python plot_exposure.py                               # cartopy maps
+python upload_to_hf.py                                # (optional) publish
+```
+
+| Raw layer | Script that downloads it | Per-cell columns produced |
+|-----------|--------------------------|---------------------------|
+| buildings, roads, land cover, water | `download_overture.py` | `bld_count`, `bld_area_m2`, `road_km*`, `landcover_class`, `seabar` |
+| places (POIs) | `download_overture.py` / `aggregate_places.py` | `place_count`, `pl_<class>` ×23 |
+
+Use `--res 0.1` for a coarser grid. A single tile (e.g. 36 = Nairobi/Mombasa)
+is the quickest way to reproduce and inspect raw values end-to-end.
+
 ## Outputs
 
 | File | What |
