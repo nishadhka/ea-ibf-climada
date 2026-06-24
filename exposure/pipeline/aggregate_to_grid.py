@@ -45,6 +45,7 @@ import config
 from grid import build_grid, tiles_table
 
 URBAN_MIN_BLD = 20          # >= this many buildings in a cell -> urban
+SMALL_BLD_M2 = 40.0         # footprints below this hint at informal/dense settlement
 BATCH = 50_000
 ROAD_CATS = ["primary", "secondary", "tertiary", "other"]
 
@@ -105,20 +106,46 @@ def layer_paths(odir: Path, otype: str) -> list[Path]:
 
 
 # --- per-layer aggregation -------------------------------------------------
-def agg_buildings(paths: list[Path], utm: str, res: float):
-    """-> (count Series, area_m2 Series) keyed by (ix,iy). Reads all sub-tiles."""
-    cnt = area = None
+# Building columns produced per cell (count + footprint-size distribution).
+BLD_COLS = ["bld_count", "bld_area_m2", "bld_area_mean", "bld_area_median",
+            "bld_area_std", "bld_area_p25", "bld_area_p75", "bld_small_frac"]
+
+
+def agg_buildings(paths: list[Path], utm: str, res: float) -> pd.DataFrame:
+    """-> DataFrame indexed by (ix,iy) with building count + footprint-size
+    distribution stats. The distribution (median, std, quartiles, small-building
+    fraction) is the informal-settlement / vulnerability signal: many tiny,
+    tightly-packed footprints (e.g. Kibera ~10-20 m²) vs fewer large ones.
+
+    Individual footprint areas are computed in local UTM and streamed; the
+    per-cell stats come from a single groupby at the end (memory: one tile's
+    areas as float32, ~70 MB even for the 16.6M-building tiles)."""
+    ix_parts, iy_parts, a_parts = [], [], []
     for path in paths:
         for geoms, _ in _iter_geom_batches(path):
             gs = gpd.GeoSeries(geoms, crs="EPSG:4326")
             cen = gs.representative_point()
             ix, iy = bin_xy(cen.x.values, cen.y.values, res)
-            key = list(zip(ix, iy))
-            a = gs.to_crs(utm).area.values
-            cnt = _accum(cnt, key, np.ones(len(key)))
-            area = _accum(area, key, a)
-    return (cnt if cnt is not None else pd.Series(dtype=float),
-            area if area is not None else pd.Series(dtype=float))
+            a = gs.to_crs(utm).area.values.astype(np.float32)
+            ix_parts.append(ix.astype(np.int32)); iy_parts.append(iy.astype(np.int32))
+            a_parts.append(a)
+    if not a_parts:
+        return pd.DataFrame(columns=BLD_COLS)
+    d = pd.DataFrame({"ix": np.concatenate(ix_parts), "iy": np.concatenate(iy_parts),
+                      "area": np.concatenate(a_parts)})
+    d["small"] = d["area"] < SMALL_BLD_M2
+    g = d.groupby(["ix", "iy"])
+    out = pd.DataFrame({
+        "bld_count":       g["area"].size().astype(int),
+        "bld_area_m2":     g["area"].sum().round(1),
+        "bld_area_mean":   g["area"].mean().round(1),
+        "bld_area_median": g["area"].median().round(1),
+        "bld_area_std":    g["area"].std().fillna(0).round(1),
+        "bld_area_p25":    g["area"].quantile(0.25).round(1),
+        "bld_area_p75":    g["area"].quantile(0.75).round(1),
+        "bld_small_frac":  g["small"].mean().round(3),
+    })
+    return out
 
 
 def agg_roads(paths: list[Path], utm: str, res: float):
@@ -215,15 +242,18 @@ def aggregate_tile(sno: int, bbox: tuple, cells: gpd.GeoDataFrame,
     df = cells[["ix", "iy", "lon", "lat", "tile_sno"]].copy()
     df = df.set_index(["ix", "iy"]).sort_index()
 
-    bld_cnt, bld_area = agg_buildings(layer_paths(odir, "building"), utm, res)
+    bstats = agg_buildings(layer_paths(odir, "building"), utm, res)
     roads = agg_roads(layer_paths(odir, "segment"), utm, res)
     places = agg_places(layer_paths(odir, "place"), res)
     landcls = agg_landcover(layer_paths(odir, "land_cover") + layer_paths(odir, "land_use"),
                             utm, res)
     seabar = agg_seabar(odir / "water.parquet", cells)
 
-    df["bld_count"] = bld_cnt.reindex(df.index, fill_value=0).astype(int)
-    df["bld_area_m2"] = bld_area.reindex(df.index, fill_value=0.0).round(1)
+    for c in BLD_COLS:
+        fill = 0 if c == "bld_count" else 0.0
+        df[c] = (bstats[c] if c in bstats else pd.Series(dtype=float)).reindex(
+            df.index, fill_value=fill)
+    df["bld_count"] = df["bld_count"].astype(int)
     df["road_km"] = roads["total"].reindex(df.index, fill_value=0.0).round(4)
     for c in ROAD_CATS:
         df[f"road_km_{c}"] = roads[c].reindex(df.index, fill_value=0.0).round(4)
