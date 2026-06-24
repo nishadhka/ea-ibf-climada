@@ -64,7 +64,10 @@ All under [`pipeline/`](pipeline/). Run inside the project venv
 | `download_overture.py` | Per-tile Overture → GeoParquet. Heavy layers (`building`, `segment`) **sub-tiled to 1°** to bound memory; parquet-footer validation; empty (ocean) bboxes skipped cleanly. |
 | `aggregate_to_grid.py` | **Streaming** (`pq.iter_batches`) aggregation of all layers into the grid → per-tile CSV; `--merge-only` concatenates them. Memory-bounded. |
 | `aggregate_places.py` | Add-on: re-downloads only the small `place` layer, counts the 23 place classes per cell → `pl_<class>` columns. |
+| `aggregate_buildings.py` | Add-on: re-downloads only buildings, recomputes the building footprint-size distribution columns. |
 | `place_categories.py` | Maps Overture's 880+ category taxonomy → the 23 IBF place classes (editable). |
+| `run_buildings_1km.py` | Standalone 1 km building-vulnerability runner (see section below). |
+| `plot_buildings_1km.py` | 1 km median-footprint + small-building-fraction maps. |
 | `compute_exposure.py` | Weighted composite exposure score → scored CSV + 0.05° COG GeoTIFF. |
 | `run_pipeline.py` | **Orchestrator**: per-tile download→aggregate→discard, then merge+score+COG. `--dry-run`, single-tile, `--continue-on-error`. |
 | `upload_to_hf.py` | Publishes outputs + per-tile CSVs to the `E4DRR/ea-exposure` HuggingFace dataset (token from the shared `wflow-jl/.env`). |
@@ -150,6 +153,41 @@ is the quickest way to reproduce and inspect raw values end-to-end.
 
 `exposure = 0.50·norm(bld_area) + 0.20·norm(bld_count) + 0.20·norm(road_km)
 + 0.10·norm(place_count)`, 99th-pctile capped; ocean cells = nodata.
+
+## 1 km building-vulnerability product (finer grid)
+
+A separate, finer **building-only** layer at **0.01° (~1 km)**. The 5 km grid
+mixes a slum like Kibera (~2.5 km²) with surrounding formal blocks, so the
+footprint-size signal averages out; at 1 km it **resolves** — informal
+settlements (Kibera, Eastleigh) show up as *dense + small median footprint +
+high small-building fraction* vs formal areas (lower density, larger footprints).
+Roads/places are too sparse at 1 km, so this product is buildings only.
+
+Scripts: `run_buildings_1km.py` (download→aggregate→discard per tile → merged
+Parquet), `plot_buildings_1km.py` (maps). Same `agg_buildings` distribution
+stats as the 0.05° grid.
+
+| File (HF `buildings_1km/`) | What |
+|------|------|
+| `ea_exposure_buildings_0p01.parquet` | 2,526,082 populated 1 km cells, 188.2 M buildings, **37 MB** |
+| `09_median_footprint_1km.png` | median footprint per cell (small = informal/dense) |
+| `10_small_building_frac_1km.png` | fraction of footprints < 40 m² (slum signal) |
+
+Per-cell columns: `ix, iy, lon, lat, tile_sno, bld_count, bld_area_m2,
+bld_area_mean, bld_area_median, bld_area_std, bld_area_p25, bld_area_p75,
+bld_small_frac`. Only populated cells (`bld_count > 0`) are kept; each cell is
+assigned to one tile (no edge double-counting). Validated on Nairobi: Kibera
+median ~54 m² / small_frac 0.39 and Eastleigh 38 m² / 0.52 vs Westlands 90 m² /
+0.28.
+
+```bash
+python run_buildings_1km.py --continue-on-error    # all 38 tiles (~98 min)
+python plot_buildings_1km.py                        # vulnerability maps
+```
+```python
+import pandas as pd
+b = pd.read_parquet("hf://datasets/E4DRR/ea-exposure/buildings_1km/ea_exposure_buildings_0p01.parquet")
+```
 
 ## Notes
 

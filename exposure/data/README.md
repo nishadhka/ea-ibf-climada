@@ -48,6 +48,9 @@ python aggregate_places.py  --tile 36        # 23 pl_<class> counts
 | `outputs/ea_exposure_grid_0p05_scored.csv` | same + `exposure` composite score |
 | `outputs/ea_exposure_0p05.tif` | exposure score as a 0.05° EPSG:4326 COG (660×800; ocean = nodata) |
 | `grid_csv/{sno}.csv` | per-tile aggregates (one file per 5×5° tile) |
+| `buildings_1km/ea_exposure_buildings_0p01.parquet` | **1 km** building-vulnerability grid (2.53 M populated cells; footprint-size distribution incl. median + small-building fraction) |
+| `buildings_1km/09_median_footprint_1km.png` | median footprint map (small = informal/dense) |
+| `buildings_1km/10_small_building_frac_1km.png` | <40 m² fraction map (slum signal) |
 
 ## Per-cell schema
 
